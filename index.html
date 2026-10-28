@@ -1,0 +1,2881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AETHER: 3D Gesture-Controlled Particle Engine</title>
+  <!-- Google Fonts for Modern Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+  
+  <!-- CDNs for WebGL and MediaPipe -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* Reset & Base Styling */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #020205;
+      font-family: 'Outfit', sans-serif;
+      color: #e2e8f0;
+    }
+
+    /* WebGL Canvas */
+    #webgl-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      display: block;
+    }
+
+    /* Sidebar container for stacking dashboard and webcam */
+    .sidebar {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      bottom: 24px;
+      width: 380px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .dashboard, .webcam-container {
+      pointer-events: auto;
+    }
+
+    /* Dashboard UI (Glassmorphic) */
+    .dashboard {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      background: rgba(2, 2, 5, 0.45);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 
+                  inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    }
+
+    .dashboard::-webkit-scrollbar {
+      width: 4px;
+    }
+    .dashboard::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+    }
+
+    /* Header styling */
+    .header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 16px;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .logo {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 22px;
+      letter-spacing: 2px;
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
+    }
+
+    .version-tag {
+      font-size: 10px;
+      letter-spacing: 1px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: #94a3b8;
+      font-weight: 300;
+    }
+
+    /* Info sections */
+    .section-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #64748b;
+      margin-bottom: 10px;
+    }
+
+    .status-panel {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+
+    .status-label {
+      color: #94a3b8;
+    }
+
+    .status-value {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot-cyan { background-color: #00f2fe; box-shadow: 0 0 8px #00f2fe; }
+    .dot-green { background-color: #10b981; box-shadow: 0 0 8px #10b981; }
+    .dot-yellow { background-color: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+    .dot-red { background-color: #ef4444; box-shadow: 0 0 8px #ef4444; }
+    .dot-gold { background-color: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+
+    /* Control Instructions */
+    .instructions-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .instruction-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 12px;
+      margin-bottom: 10px;
+      color: #cbd5e1;
+    }
+
+    .instruction-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .key-icon {
+      font-family: 'Space Grotesk', sans-serif;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+    }
+
+    /* Preset Grid Grid */
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .preset-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 10px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      font-weight: 400;
+      color: #94a3b8;
+      text-align: left;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .preset-btn:hover {
+      background: rgba(0, 242, 254, 0.08);
+      border-color: rgba(0, 242, 254, 0.4);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.1);
+      transform: translateY(-1px);
+    }
+
+    .preset-btn.active {
+      background: linear-gradient(135deg, rgba(0, 242, 254, 0.15) 0%, rgba(79, 172, 254, 0.15) 100%);
+      border-color: #00f2fe;
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 0 15px rgba(0, 242, 254, 0.25);
+    }
+
+    .preset-num {
+      font-size: 9px;
+      font-family: 'Space Grotesk', sans-serif;
+      color: rgba(255, 255, 255, 0.35);
+      text-transform: uppercase;
+    }
+
+    .preset-btn.active .preset-num {
+      color: rgba(0, 242, 254, 0.8);
+    }
+
+    /* Webcam Mirror Box (Bottom-Left stacked in Sidebar) */
+    .webcam-container {
+      position: relative;
+      width: 100%;
+      height: 285px; /* Aspect 4:3 relative to 380px width */
+      z-index: 10;
+      border-radius: 20px; /* Matching dashboard */
+      overflow: hidden;
+      background-color: rgba(2, 2, 5, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6), 
+                  0 0 20px rgba(0, 242, 254, 0.1);
+      transition: all 0.5s ease;
+      flex-shrink: 0;
+    }
+
+    /* State based webcam glow */
+    .webcam-container.tracking {
+      border-color: rgba(16, 185, 129, 0.6);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6), 
+                  0 0 25px rgba(16, 185, 129, 0.25);
+    }
+
+    .webcam-container.searching {
+      border-color: rgba(245, 158, 11, 0.6);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6), 
+                  0 0 25px rgba(245, 158, 11, 0.25);
+    }
+
+    .webcam-container.error {
+      border-color: rgba(239, 68, 110, 0.6);
+      box-shadow: 0 15px 30px rgba(0, 0, 0, 0.6), 
+                  0 0 25px rgba(239, 68, 110, 0.25);
+    }
+
+    #webcam-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+
+    #webcam-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 11;
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    /* Splash / Loading Screen */
+    .loader-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 100;
+      background-color: #020205;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .spinner {
+      position: relative;
+      width: 60px;
+      height: 60px;
+    }
+
+    .spinner-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border: 3px solid transparent;
+      border-top-color: #00f2fe;
+      border-radius: 50%;
+      animation: spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+    }
+
+    .spinner-ring:nth-child(2) {
+      border-top-color: transparent;
+      border-bottom-color: #4facfe;
+      animation-duration: 0.8s;
+      animation-direction: reverse;
+    }
+
+    .loader-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 24px;
+      letter-spacing: 4px;
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .loader-status {
+      font-size: 12px;
+      color: #64748b;
+      letter-spacing: 1px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Webcam Toggle and manual trigger */
+    .webcam-status-label {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: rgba(2, 2, 5, 0.7);
+      padding: 3px 8px;
+      border-radius: 8px;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      z-index: 12;
+      text-transform: uppercase;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .webcam-container.tracking .webcam-status-label { color: #10b981; }
+    .webcam-container.searching .webcam-status-label { color: #f59e0b; }
+    .webcam-container.error .webcam-status-label { color: #ef4444; }
+
+    /* Hint overlay at the bottom center */
+    .action-toast {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10;
+      background: rgba(2, 2, 5, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 11px;
+      color: #94a3b8;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      animation: pulseToast 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseToast {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+    /* Toggle button groups */
+    .toggle-group {
+      display: flex;
+      gap: 0;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .toggle-btn {
+      font-family: 'Outfit', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      padding: 4px 10px;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .toggle-btn:last-child {
+      border-right: none;
+    }
+
+    .toggle-btn.active {
+      background: linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(79, 172, 254, 0.15));
+      color: #00f2fe;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.3);
+    }
+
+    .toggle-btn:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.06);
+      color: #94a3b8;
+    }
+
+    /* Two-hand directives section */
+    .two-hand-section-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #f59e0b;
+      margin-top: 8px;
+      margin-bottom: 4px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    /* Active Theory-style Cyber Music Player (Top Right Corner) */
+    .cyber-audio-player {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      z-index: 20;
+      width: auto;
+      min-width: 320px;
+      max-width: 450px;
+      background: rgba(2, 2, 5, 0.65);
+      backdrop-filter: blur(20px) saturate(180%);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid rgba(0, 242, 254, 0.22);
+      border-radius: 14px;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 
+                  0 0 15px rgba(0, 242, 254, 0.08);
+      transition: border-color 0.3s, box-shadow 0.3s;
+      pointer-events: auto;
+    }
+
+    .cyber-audio-player::before {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: 20%;
+      right: 20%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 242, 254, 0.6), transparent);
+      box-shadow: 0 0 8px rgba(0, 242, 254, 0.8);
+      pointer-events: none;
+    }
+
+    .cyber-audio-player.playing {
+      border-color: rgba(0, 242, 254, 0.5);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 
+                  0 0 25px rgba(0, 242, 254, 0.2);
+    }
+
+    .cyber-audio-btn {
+      width: 32px;
+      height: 30px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: #94a3b8;
+      font-family: 'Space Grotesk', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+      flex-shrink: 0;
+    }
+
+    .cyber-audio-btn:hover {
+      background: rgba(0, 242, 254, 0.15);
+      border-color: rgba(0, 242, 254, 0.5);
+      color: #00f2fe;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .cyber-audio-btn:active {
+      transform: translateY(1px);
+    }
+
+    .cyber-track-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 3px 6px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+
+    .cyber-track-info:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .cyber-track-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .cyber-track-title {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #cffafe;
+      text-shadow: 0 0 8px rgba(0, 242, 254, 0.4);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 190px;
+    }
+
+    .cyber-track-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 9px;
+      color: #64748b;
+      letter-spacing: 0.6px;
+      font-family: 'Space Grotesk', sans-serif;
+      text-transform: uppercase;
+    }
+
+    .cyber-waveform {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 10px;
+      margin-left: 2px;
+    }
+
+    .cyber-wave-bar {
+      width: 2px;
+      background: #00f2fe;
+      border-radius: 1px;
+      min-height: 2px;
+      height: 3px;
+      transition: height 0.08s ease;
+      box-shadow: 0 0 4px rgba(0, 242, 254, 0.5);
+    }
+
+    /* Hoverable Volume Control */
+    .cyber-volume-control {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+      padding: 2px 4px;
+      border-radius: 8px;
+      transition: background 0.2s ease;
+    }
+
+    .cyber-volume-control:hover,
+    .cyber-volume-control:focus-within {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .cyber-volume-btn {
+      width: 26px;
+      height: 26px;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      transition: color 0.2s, transform 0.15s;
+      flex-shrink: 0;
+      border-radius: 6px;
+    }
+
+    .cyber-volume-btn:hover {
+      color: #00f2fe;
+      transform: scale(1.1);
+    }
+
+    .cyber-volume-slider-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 0;
+      opacity: 0;
+      pointer-events: none;
+      overflow: hidden;
+      transition: max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+                  opacity 0.25s ease;
+      white-space: nowrap;
+    }
+
+    /* Expand smoothly on hover, focus, or while active/dragged */
+    .cyber-volume-control:hover .cyber-volume-slider-wrapper,
+    .cyber-volume-control:focus-within .cyber-volume-slider-wrapper,
+    .cyber-volume-slider-wrapper.active {
+      max-width: 120px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .cyber-volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 65px;
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(to right, #00f2fe 80%, rgba(255, 255, 255, 0.15) 80%);
+      outline: none;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .cyber-volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #00f2fe;
+      cursor: pointer;
+      box-shadow: 0 0 6px #00f2fe, 0 0 12px rgba(0, 242, 254, 0.6);
+      border: 1.5px solid #ffffff;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    .cyber-volume-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+      box-shadow: 0 0 10px #00f2fe, 0 0 18px rgba(0, 242, 254, 0.9);
+    }
+
+    .cyber-volume-slider::-moz-range-thumb {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #00f2fe;
+      cursor: pointer;
+      box-shadow: 0 0 6px #00f2fe, 0 0 12px rgba(0, 242, 254, 0.6);
+      border: 1.5px solid #ffffff;
+    }
+
+    .cyber-volume-val {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 9px;
+      font-weight: 700;
+      color: #00f2fe;
+      letter-spacing: 0.5px;
+      min-width: 24px;
+      text-align: right;
+      text-shadow: 0 0 5px rgba(0, 242, 254, 0.5);
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- WebGL Render Canvas -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- Top-Right Cyber Music Player (Active Theory Visuals) -->
+  <div class="cyber-audio-player" id="cyber-audio-player">
+    <button class="cyber-audio-btn cyber-prev-btn" id="audio-prev-btn" title="Restart / Prev">&lt;&lt;</button>
+    <div class="cyber-track-info" id="audio-play-toggle" title="Click to Play / Pause">
+      <div class="cyber-track-title-row">
+        <span class="cyber-track-title" id="audio-title">CORNFIELD CHASE - H. ZIMMER</span>
+        <div class="cyber-waveform" id="audio-waveform">
+          <span class="cyber-wave-bar"></span>
+          <span class="cyber-wave-bar"></span>
+          <span class="cyber-wave-bar"></span>
+          <span class="cyber-wave-bar"></span>
+          <span class="cyber-wave-bar"></span>
+        </div>
+      </div>
+      <div class="cyber-track-meta">
+        <span id="audio-status-label">READY • CLICK TO PLAY</span>
+        <span id="audio-time-label">0:00</span>
+      </div>
+    </div>
+    <button class="cyber-audio-btn cyber-next-btn" id="audio-next-btn" title="Replay / Loop">&gt;&gt;</button>
+    <div class="cyber-volume-control" id="cyber-volume-control" title="Hover to Adjust Volume">
+      <button class="cyber-volume-btn" id="audio-volume-btn" title="Mute / Unmute">🔊</button>
+      <div class="cyber-volume-slider-wrapper" id="audio-volume-wrapper">
+        <input type="range" class="cyber-volume-slider" id="audio-volume-slider" min="0" max="1" step="0.01" value="0.8" title="Volume slider">
+        <span class="cyber-volume-val" id="audio-volume-val">80%</span>
+      </div>
+    </div>
+    <audio id="bg-audio" preload="auto" loop>
+      <source src="Music-Song/Cornfield Chase [7GlsxNI4LVI].opus" type="audio/ogg; codecs=opus">
+      <source src="Music-Song/Cornfield%20Chase%20%5B7GlsxNI4LVI%5D.opus" type="audio/ogg">
+    </audio>
+  </div>
+
+  <!-- Loader Overlay -->
+  <div class="loader-overlay" id="loader">
+    <div class="spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-ring"></div>
+    </div>
+    <div class="loader-title">AETHER</div>
+    <div class="loader-status" id="loader-text">Initializing Engine Components...</div>
+  </div>
+
+  <!-- Sidebar Panel (Stops elements overlapping and stacks webcam under controls) -->
+  <div class="sidebar">
+    <!-- Dashboard -->
+    <div class="dashboard">
+      <div class="header">
+        <div class="logo-container">
+          <span class="logo">AETHER</span>
+          <span class="version-tag">r128.mp</span>
+        </div>
+        <div class="subtitle">3D Gesture-Controlled Particle Engine</div>
+      </div>
+
+      <!-- Live System Status -->
+      <div>
+        <div class="section-title">SYSTEM STATUS</div>
+        <div class="status-panel">
+          <div class="status-row">
+            <span class="status-label">Webcam Stream:</span>
+            <span class="status-value" id="status-webcam">
+              <span class="status-dot dot-yellow"></span>
+              Initializing
+            </span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Engine Controller:</span>
+            <span class="status-value" id="status-controller">
+              <span class="status-dot dot-cyan"></span>
+              Auto-Orbit
+            </span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Particle Load:</span>
+            <div class="toggle-group" id="particle-count-toggle">
+              <button class="toggle-btn" data-count="36000">36K Max</button>
+              <button class="toggle-btn active" data-count="28000">28K Ultra</button>
+              <button class="toggle-btn" data-count="20000">20K Lite</button>
+            </div>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Gesture Mode:</span>
+            <div class="toggle-group" id="gesture-mode-toggle">
+              <button class="toggle-btn active" data-mode="1">1-Hand</button>
+              <button class="toggle-btn" data-mode="2">2-Hand</button>
+            </div>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Dominant Hand:</span>
+            <div class="toggle-group" id="handedness-toggle">
+              <button class="toggle-btn active" data-hand="Right">Right</button>
+              <button class="toggle-btn" data-hand="Left">Left</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gesture Guide -->
+      <div>
+        <div class="section-title">CONTROL DIRECTIVES</div>
+        <div class="instructions-card">
+          <div class="instruction-item">
+            <span class="key-icon">WRIST</span>
+            <div>Move wrist across webcam view to orbit/rotate the galaxy coordinates.</div>
+          </div>
+          <div class="instruction-item">
+            <span class="key-icon">PINCH</span>
+            <div>Bring Thumb & Index together to Zoom Out; separate them to Zoom In.</div>
+          </div>
+          <div class="instruction-item">
+            <span class="key-icon">ROLL</span>
+            <div>Rotate palm clockwise/anti-clockwise to spin the shape around the Z-axis.</div>
+          </div>
+          <div class="instruction-item">
+            <span class="key-icon">MOUSE / DRAG</span>
+            <div>Click-drag canvas to manual orbit. Scroll to zoom. Hand detection overrides mouse.</div>
+          </div>
+          <!-- Two-Hand Gesture Directives (hidden by default) -->
+          <div id="two-hand-directives" style="display: none;">
+            <div class="two-hand-section-label">2-Hand Gestures</div>
+            <div class="instruction-item">
+              <span class="key-icon">SCALE</span>
+              <div>Move both hands apart to enlarge; bring together to shrink the formation.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">STEER</span>
+              <div>Tilt both hands like a steering wheel to roll the shape.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">EXPLODE</span>
+              <div>Open both fists to scatter particles. Repeat to reform them.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">PAN</span>
+              <div>Move both hands in parallel across screen to pan 3D space.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">CLAP</span>
+              <div>Clap hands together to reset view, scale, pan & orientation.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">FREEZE</span>
+              <div>Pinch both hands simultaneously to lock and freeze view.</div>
+            </div>
+            <!-- Phase 3: Tier 3 Asymmetric Gestures -->
+            <div class="two-hand-section-label">Asymmetric Gestures</div>
+            <div class="instruction-item">
+              <span class="key-icon">ORBIT+</span>
+              <div>Keep left hand still as anchor. Move right wrist for precision orbit.</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">Z+R</span>
+              <div>Left hand pinch = zoom. Right hand orbit = rotate. Simultaneously!</div>
+            </div>
+            <div class="instruction-item">
+              <span class="key-icon">CYCLE</span>
+              <div>Left fist + right open palm to cycle through shape presets.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets Grid -->
+      <div>
+        <div class="section-title">PARTICLE PRESETS</div>
+        <div class="presets-grid" id="preset-buttons-container">
+          <!-- Generated Dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Mirrored Webcam Container -->
+    <div class="webcam-container searching" id="webcam-box">
+      <div class="webcam-status-label" id="webcam-indicator">Searching</div>
+      <video id="webcam-video" autoplay playsinline muted></video>
+      <canvas id="webcam-canvas" width="320" height="240"></canvas>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="action-toast" id="gesture-toast">
+    <span class="status-dot dot-cyan" id="toast-dot" style="margin-right: 2px;"></span>
+    <span id="toast-text">System running in Auto-Orbit. Enable camera or drag mouse.</span>
+  </div>
+
+  <script>
+    // Globals & Constants
+    const MAX_PARTICLE_COUNT = 36000;
+    let activeParticleCount = 28000;
+    let isMorphing = true;
+    let morphStartTime = 0;
+
+    // Active Theory-style Cyber Music Player State & Web Audio API
+    let bgAudio = null;
+    let audioCtx = null;
+    let audioAnalyser = null;
+    let audioSource = null;
+    let audioDataArray = null;
+    let isAudioPlaying = false;
+    let isAudioMuted = false;
+    let audioVolume = 0.8;
+    let previousVolume = 0.8;
+
+    const presets = [
+      { name: "Lunar Galaxy", desc: "Logarithmic Spirals" },
+      { name: "Radiant Waves", desc: "Sine/Cosine Grid" },
+      { name: "Saturn Rings", desc: "Core + Flat Rings" },
+      { name: "Glowing Heart", desc: "Parametric Equation" },
+      { name: "Crystal DNA", desc: "Double Helix & Rungs" },
+      { name: "Diamond Knot", desc: "Torus Knot Tube" },
+      { name: "Cosmic Burst", desc: "Radial Expansion" },
+      { name: "Cube Matrix", desc: "3D Coordinate Lattice" },
+      { name: "Moon Vortex", desc: "Accretion Disk Void" },
+      { name: "Sparkle Wings", desc: "Fay's Butterfly Curve" },
+      { name: "Quantum Nebula", desc: "Gaussian Cluster Cloud" },
+      { name: "Hyper-Tunnel", desc: "Helical Cylindrical Tube" }
+    ];
+
+    let currentPresetIndex = 0;
+    const presetPositions = [];
+    const presetHues = [];
+    const presetSats = [];
+    const presetLits = [];
+
+    // Three.js State
+    let scene, camera, renderer, particleGeometry, particleSystem;
+    let targetDeltaX = 0, targetDeltaY = 0, targetDeltaZ = 0;
+    let currentDeltaX = 0, currentDeltaY = 0, currentDeltaZ = 0;
+    let targetCameraZ = 12;
+    let mouseDragging = false;
+    let prevMouseX = 0, prevMouseY = 0;
+    let animationTime = 0;
+    let handTrackingMode = false;
+    let lastHandDetectedTime = 0;
+    let hasHandReference = false;
+    let lastHandX = 0;
+    let lastHandY = 0;
+    let hasPinchReference = false;
+    let lastPinchDistance = 0;
+    let hasRollReference = false;
+    let lastHandRoll = 0;
+
+    // Two-Hand Mode State
+    let gestureMode = 1;         // 1 = single hand, 2 = two hands
+    let dominantHand = 'Right';  // 'Right' or 'Left' — swapped by left-handed toggle
+
+    // Two-hand gesture tracking state
+    let hasTwoHandReference = false;
+    let lastTwoHandDistance = 0;   // For G4 Scale
+    let hasTwoHandAngleRef = false;
+    let lastTwoHandAngle = 0;     // For G5 Steering Wheel
+    let targetScale = 1.0;        // Particle system scale
+    let currentScale = 1.0;
+
+    // Phase 2 State (G6 Pan, G11 Clap Reset, G12 Pinch Freeze)
+    let targetPanX = 0, targetPanY = 0;
+    let currentPanX = 0, currentPanY = 0;
+    let hasMidReference = false;
+    let lastMidX = 0, lastMidY = 0;
+    let isPinchFrozen = false;
+    let lastClapTime = 0;
+    let wristApproachHistory = [];
+
+    // Explosion state (G10)
+    let isExploded = false;
+    let explosionPositions = null; // Scattered target positions
+    let explosionArmed = false;    // Both fists detected = armed
+    let lastBothFistTime = 0;
+    let lastBothOpenTime = 0;
+
+    // Phase 3 State (G7 Anchor Precision Orbit, G8 Zoom+Rotate, G9 Shape Cycle)
+    let isAnchorOrbitActive = false;     // G7: Left hand stationary → right orbits with stabilized reference
+    let anchorRefX = 0, anchorRefY = 0;  // G7: Left hand anchor position when locked
+    const anchorThreshold = 0.025;       // G7: Movement threshold for "stationary" detection
+    let lastShapeCycleTime = 0;          // G9: Debounce timer for shape cycling
+    let shapeCycleFistHoldStart = 0;     // G9: Timestamp when left fist + right palm first detected
+    let isShapeCycleArmed = false;       // G9: Whether the fist+palm pose is being held
+
+    // MediaPipe State
+    let handsTracker;
+    let videoStream = null;
+    let cameraActive = false;
+    let isProcessing = false;
+    let hiddenCanvas = null;
+    let hiddenCtx = null;
+    let lastMediaPipeSendTime = 0;
+    const MEDIAPIPE_INTERVAL_MS = 30; // ~33 FPS cap (matches webcam native rate, cuts ML CPU load by ~50%)
+
+    // Elements
+    const loaderOverlay = document.getElementById('loader');
+    const loaderText = document.getElementById('loader-text');
+    const webcamBox = document.getElementById('webcam-box');
+    const webcamVideo = document.getElementById('webcam-video');
+    const webcamCanvas = document.getElementById('webcam-canvas');
+    const webcamCtx = webcamCanvas.getContext('2d');
+    const webcamIndicator = document.getElementById('webcam-indicator');
+    const statusWebcamVal = document.getElementById('status-webcam');
+    const statusControllerVal = document.getElementById('status-controller');
+    const toastText = document.getElementById('toast-text');
+    const toastDot = document.getElementById('toast-dot');
+
+    // Deterministic Seeded Pseudo-Random Generator (LCG)
+    // Ensures coordinates are identical and smooth across loads
+    function seededRandom(seed) {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
+
+    // -------------------------------------------------------------
+    // WebGL / Scene Initialisation
+    // -------------------------------------------------------------
+    function initThree() {
+      updateLoaderText("Initializing WebGL Scene...");
+      
+      const canvas = document.getElementById('webgl-canvas');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x020205);
+      // Exponential deep fog for cosmic backdrop depth
+      scene.fog = new THREE.FogExp2(0x020205, 0.025);
+
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.z = 30; // Start back and fly in
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true,
+        powerPreference: "high-performance"
+      });
+      // Cap at 2 device pixel ratio to maintain performance in 4K display screens
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      // Create Particle Texture dynamically
+      const particleTexture = createCircularGlowTexture();
+
+      // Geometry & Custom Arrays
+      particleGeometry = new THREE.BufferGeometry();
+      
+      // Initialise empty attributes for MAX_PARTICLE_COUNT
+      const initialPositions = new Float32Array(MAX_PARTICLE_COUNT * 3);
+      const initialColors = new Float32Array(MAX_PARTICLE_COUNT * 3);
+      
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(initialPositions, 3));
+      particleGeometry.setAttribute('color', new THREE.BufferAttribute(initialColors, 3));
+      particleGeometry.setDrawRange(0, activeParticleCount);
+
+      // Glow Material with Additive Blending
+      const particleMaterial = new THREE.PointsMaterial({
+        size: 0.18,
+        map: particleTexture,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        vertexColors: true
+      });
+
+      particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+      scene.add(particleSystem);
+
+      // Handle Resize
+      window.addEventListener('resize', onWindowResize, false);
+      
+      // Fallback Mouse Control listeners
+      setupMouseHandlers(canvas);
+    }
+
+    // CanvasTexture generator for white core + soft radial HSL glow
+    function createCircularGlowTexture() {
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // Solid white core
+      grad.addColorStop(0.12, 'rgba(255, 255, 255, 1.0)');
+      grad.addColorStop(0.25, 'rgba(255, 255, 255, 0.6)');
+      grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.15)'); // Soft glow
+      grad.addColorStop(1.0, 'rgba(255, 255, 255, 0.0)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, size, size);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      return texture;
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // -------------------------------------------------------------
+    // Coordinate Preset Buffers Generation (12 Shapes)
+    // -------------------------------------------------------------
+    function generatePresetCoordinates() {
+      updateLoaderText("Simulating Math Presets...");
+      const N = MAX_PARTICLE_COUNT;
+
+      for (let p = 0; p < presets.length; p++) {
+        const positions = new Float32Array(N * 3);
+        const hues = new Float32Array(N);
+        const sats = new Float32Array(N);
+        const lits = new Float32Array(N);
+        let sIdx = 1; // Seed counter for deterministic randoms
+
+        for (let i = 0; i < N; i++) {
+          const u = i / N;
+          let x = 0, y = 0, z = 0;
+          let h = 0, s = 0.9, l = 0.5;
+
+          // Preset equations
+          switch (p) {
+            case 0: // 1. Lunar Galaxy (Spirals)
+              {
+                const theta = u * 15 * Math.PI;
+                const r = Math.pow(u, 0.38) * 11.5;
+                const arm = (i % 3) * (2 * Math.PI / 3);
+                // Slight scatter
+                const noiseX = (seededRandom(sIdx++) - 0.5) * 0.45;
+                const noiseZ = (seededRandom(sIdx++) - 0.5) * 0.45;
+                
+                x = r * Math.cos(theta + arm) + noiseX;
+                z = r * Math.sin(theta + arm) + noiseZ;
+                y = (seededRandom(sIdx++) - 0.5) * 0.3 * (12 - r) * 0.2;
+                
+                h = 240 + (r / 11.5) * 60; // Blue to Magenta
+              }
+              break;
+
+            case 1: // 2. Radiant Waves (Grid)
+              {
+                const side = Math.floor(Math.sqrt(N)); // 167
+                const rRow = Math.floor(i / side);
+                const cCol = i % side;
+                
+                if (i < side * side) {
+                  x = (cCol / side - 0.5) * 20;
+                  z = (rRow / side - 0.5) * 20;
+                  y = Math.sin(x * 0.5) * Math.cos(z * 0.5) * 2.8;
+                } else {
+                  // Overflow particles placed randomly below the grid
+                  x = (seededRandom(sIdx++) - 0.5) * 20;
+                  z = (seededRandom(sIdx++) - 0.5) * 20;
+                  y = Math.sin(x * 0.5) * Math.cos(z * 0.5) * 2.8;
+                }
+                h = 160 + (y + 2.8) * 15; // Cyan/Green waves
+              }
+              break;
+
+            case 2: // 3. Saturn Rings (Core + Ring)
+              {
+                const boundary = Math.floor(N * 0.4); // 40% inside core
+                if (i < boundary) {
+                  // Core Sphere using Fibonacci distribution
+                  const phi = Math.acos(1 - 2 * (i / boundary));
+                  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+                  const rad = 2.4 + (seededRandom(sIdx++) - 0.5) * 0.15;
+                  x = rad * Math.sin(phi) * Math.cos(theta);
+                  y = rad * Math.sin(phi) * Math.sin(theta);
+                  z = rad * Math.cos(phi);
+                  h = 205; // Pale cyan-blue
+                  s = 0.5;
+                  l = 0.6;
+                } else {
+                  // Flat outer ring
+                  const tNorm = (i - boundary) / (N - boundary);
+                  const rad = 4.5 + tNorm * 5.0 + (seededRandom(sIdx++) - 0.5) * 0.3;
+                  const theta = tNorm * 120 * Math.PI;
+                  x = rad * Math.cos(theta);
+                  z = rad * Math.sin(theta);
+                  y = (seededRandom(sIdx++) - 0.5) * 0.12;
+                  h = 30 + (rad - 4.5) * 6; // Copper/gold ring
+                  s = 0.95;
+                }
+              }
+              break;
+
+            case 3: // 4. Glowing Heart (Parametric)
+              {
+                const t = Math.PI * (2 * u - 1);
+                const noiseZ = seededRandom(sIdx++) * 3.5 - 1.75;
+                const scale = 1.0 - Math.abs(noiseZ) / 5.0; // volumetric scale tapering
+                
+                x = 7.0 * Math.pow(Math.sin(t), 3) * scale;
+                y = (5.5 * Math.cos(t) - 2.2 * Math.cos(2*t) - 0.9 * Math.cos(3*t) - 0.45 * Math.cos(4*t)) * scale;
+                z = noiseZ * 1.5;
+                
+                // Shift down slightly for visual alignment
+                y -= 1.0;
+                
+                h = 345 + (Math.sin(t) * 15); // Neon Red/Pink
+              }
+              break;
+
+            case 4: // 5. Crystal DNA (Double Helix)
+              {
+                const strandCount = Math.floor(N * 0.4); // 40% per strand
+                if (i < strandCount) {
+                  // Strand A
+                  const tVal = i / strandCount;
+                  const theta = tVal * 8.0 * Math.PI;
+                  x = 3.0 * Math.cos(theta);
+                  z = 3.0 * Math.sin(theta);
+                  y = (tVal - 0.5) * 16;
+                  h = 200; // Ice Blue
+                } else if (i < strandCount * 2) {
+                  // Strand B
+                  const tVal = (i - strandCount) / strandCount;
+                  const theta = tVal * 8.0 * Math.PI + Math.PI;
+                  x = 3.0 * Math.cos(theta);
+                  z = 3.0 * Math.sin(theta);
+                  y = (tVal - 0.5) * 16;
+                  h = 10; // Coral Orange
+                } else {
+                  // Intersecting rungs (20% particles)
+                  const rungIdx = i - (strandCount * 2);
+                  const rungTotal = N - (strandCount * 2);
+                  const tVal = rungIdx / rungTotal;
+                  
+                  // Discrete rungs spaced vertically
+                  const rungsCount = 45;
+                  const targetRung = Math.floor(tVal * rungsCount);
+                  const rungY = (targetRung / rungsCount - 0.5) * 16;
+                  const theta = (targetRung / rungsCount) * 8.0 * Math.PI;
+                  
+                  // Line position from A to B
+                  const lineT = seededRandom(sIdx++);
+                  const xa = 3.0 * Math.cos(theta);
+                  const za = 3.0 * Math.sin(theta);
+                  const xb = 3.0 * Math.cos(theta + Math.PI);
+                  const zb = 3.0 * Math.sin(theta + Math.PI);
+                  
+                  x = xa + (xb - xa) * lineT;
+                  z = za + (zb - za) * lineT;
+                  y = rungY;
+                  
+                  h = 55; // White-Yellow connector core
+                  s = 0.4;
+                  l = 0.75;
+                }
+              }
+              break;
+
+            case 5: // 6. Diamond Knot (Torus Knot)
+              {
+                const pKnot = 2;
+                const qKnot = 5;
+                const theta = u * 2 * Math.PI;
+                const rVal = 5.2 + 1.8 * Math.cos(qKnot * theta);
+                
+                // Baseline knot curve
+                const baseX = rVal * Math.cos(pKnot * theta);
+                const baseZ = rVal * Math.sin(pKnot * theta);
+                const baseY = 2.2 * Math.sin(qKnot * theta);
+                
+                // Add tube volume
+                const rTube = 0.8;
+                const phi = seededRandom(sIdx++) * 2 * Math.PI;
+                x = baseX + Math.cos(phi) * rTube;
+                y = baseY + Math.sin(phi) * rTube;
+                z = baseZ + Math.sin(phi + 1) * rTube;
+                
+                h = 270 + Math.sin(theta * 3) * 45; // Purple-Teal loop
+              }
+              break;
+
+            case 6: // 7. Cosmic Burst
+              {
+                const phi = Math.acos(1 - 2 * u);
+                const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+                
+                // Core cluster expanding outwards
+                const dist = Math.pow(seededRandom(sIdx++), 1.6) * 12;
+                
+                x = dist * Math.sin(phi) * Math.cos(theta);
+                y = dist * Math.sin(phi) * Math.sin(theta);
+                z = dist * Math.cos(phi);
+                
+                h = 15 + (dist / 12) * 45; // Golden Core fading to Orange Nebula
+                l = 0.35 + (1 - dist / 12) * 0.45;
+              }
+              break;
+
+            case 7: // 8. Cube Matrix (Grid)
+              {
+                const size = Math.floor(Math.cbrt(N)); // 33 for 36K (35937), 30 for 28K (27000)
+                const sizeSq = size * size;
+                const sizeCube = size * sizeSq;
+                if (i < sizeCube) {
+                  const ix = i % size;
+                  const iy = Math.floor(i / size) % size;
+                  const iz = Math.floor(i / sizeSq);
+                  const spacing = 18.0 / size;
+                  const half = (size - 1) * 0.5;
+                  
+                  x = (ix - half) * spacing;
+                  y = (iy - half) * spacing;
+                  z = (iz - half) * spacing;
+                  
+                  h = (ix + iy + iz) * (180 / (size * 3));
+                } else {
+                  // Overflow particles scattered in coordinates
+                  x = (seededRandom(sIdx++) - 0.5) * 18;
+                  y = (seededRandom(sIdx++) - 0.5) * 18;
+                  z = (seededRandom(sIdx++) - 0.5) * 18;
+                  h = 180;
+                }
+              }
+              break;
+
+            case 8: // 9. Moon Vortex (Black Hole Disk)
+              {
+                const rMin = 1.8;
+                const rMax = 11.0;
+                const r = rMin + Math.pow(u, 1.4) * (rMax - rMin);
+                const theta = Math.log(r) * 6.5 + (seededRandom(sIdx++) * 2 * Math.PI);
+                
+                // Vortex curve flaring upward near singularity
+                const heightY = 1.3 * Math.exp(-r + rMin) + (seededRandom(sIdx++) - 0.5) * 0.22;
+                
+                x = r * Math.cos(theta);
+                z = r * Math.sin(theta);
+                y = heightY;
+                
+                if (r < 3.0) {
+                  h = 35; // Bright accretion ring
+                  l = 0.75;
+                } else {
+                  h = 220 + (r / rMax) * 50; // Deep space fade
+                  l = 0.4;
+                }
+              }
+              break;
+
+            case 9: // 10. Sparkle Wings (Butterfly Curve)
+              {
+                const theta = u * 24.0 * Math.PI;
+                // Parametric polar curve
+                const rVal = Math.exp(Math.cos(theta)) - 2 * Math.cos(4 * theta) + Math.pow(Math.sin(theta / 12), 5);
+                const scale = 1.85;
+                
+                x = rVal * Math.sin(theta) * scale;
+                y = rVal * Math.cos(theta) * scale;
+                
+                // Lift Z to construct 3D wing shape
+                z = Math.abs(x) * 0.45 + (seededRandom(sIdx++) - 0.5) * 0.35;
+                
+                h = 160 + Math.sin(theta) * 60; // Teal-Pink Wings
+              }
+              break;
+
+            case 10: // 11. Quantum Nebula (Clusters)
+              {
+                // Multi-attractor coordinate clouds
+                const attractors = [
+                  new THREE.Vector3(3.2, 2.0, -1.5),
+                  new THREE.Vector3(-3.0, -2.5, 2.0),
+                  new THREE.Vector3(2.0, -3.2, -2.2),
+                  new THREE.Vector3(-2.5, 3.0, 1.5)
+                ];
+                
+                const attIdx = i % 4;
+                const base = attractors[attIdx];
+                
+                // Gaussian wisp profile
+                const noiseVal = 4.2;
+                const dx = (seededRandom(sIdx++) * seededRandom(sIdx++) - 0.5) * noiseVal;
+                const dy = (seededRandom(sIdx++) * seededRandom(sIdx++) - 0.5) * noiseVal;
+                const dz = (seededRandom(sIdx++) * seededRandom(sIdx++) - 0.5) * noiseVal;
+                
+                x = base.x + dx;
+                y = base.y + dy;
+                z = base.z + dz;
+                
+                // Different HSL for each pocket cluster
+                const hues = [280, 325, 195, 140];
+                h = hues[attIdx] + (dx * 5);
+              }
+              break;
+
+            case 11: // 12. Hyper-Tunnel (Cylinder)
+              {
+                const zVal = (u - 0.5) * 22.0;
+                const theta = u * 70 * Math.PI;
+                const rad = 4.2 + (seededRandom(sIdx++) - 0.5) * 0.25;
+                
+                x = rad * Math.cos(theta);
+                y = rad * Math.sin(theta);
+                z = zVal;
+                
+                h = 120 + Math.sin(zVal * 0.4 + theta) * 50; // Neon Cyber Green/Blue
+              }
+              break;
+          }
+
+          // Write coordinate positions
+          positions[i * 3] = x;
+          positions[i * 3 + 1] = y;
+          positions[i * 3 + 2] = z;
+
+          // Store HSL values
+          hues[i] = h;
+          sats[i] = s;
+          lits[i] = l;
+        }
+
+        presetPositions.push(positions);
+        presetHues.push(hues);
+        presetSats.push(sats);
+        presetLits.push(lits);
+      }
+
+      // Initialise particle system buffer attributes with first preset data
+      const posAttr = particleGeometry.attributes.position;
+      const colAttr = particleGeometry.attributes.color;
+      
+      const pData = presetPositions[0];
+      const hData = presetHues[0];
+      const sData = presetSats[0];
+      const lData = presetLits[0];
+      
+      for (let i = 0; i < MAX_PARTICLE_COUNT; i++) {
+        const i3 = i * 3;
+        posAttr.array[i3] = pData[i3];
+        posAttr.array[i3 + 1] = pData[i3 + 1];
+        posAttr.array[i3 + 2] = pData[i3 + 2];
+        
+        // Initial color calculations
+        hslToRgbFast(hData[i] / 360, sData[i], lData[i]);
+        colAttr.array[i3] = r;
+        colAttr.array[i3 + 1] = g;
+        colAttr.array[i3 + 2] = b;
+      }
+      
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+    }
+
+    // Helper: Convert HSL values to RGB
+    function hslToRgb(h, s, l) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l; // achromatic
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return { r, g, b };
+    }
+
+    // -------------------------------------------------------------
+    // Mouse Interaction Fallbacks
+    // -------------------------------------------------------------
+    function setupMouseHandlers(canvas) {
+      // Drag mouse to rotate coordinates
+      canvas.addEventListener('mousedown', (e) => {
+        if (handTrackingMode) return; // Locked to Hand gestures
+        mouseDragging = true;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', () => {
+        mouseDragging = false;
+      });
+
+      canvas.addEventListener('mousemove', (e) => {
+        if (handTrackingMode || !mouseDragging) return;
+        
+        const deltaX = e.clientX - prevMouseX;
+        const deltaY = e.clientY - prevMouseY;
+        
+        targetDeltaX = deltaX * 0.009;
+        targetDeltaY = deltaY * 0.009;
+        
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      // Mouse Wheel to zoom
+      canvas.addEventListener('wheel', (e) => {
+        if (handTrackingMode) return;
+        targetCameraZ += e.deltaY * 0.015;
+        targetCameraZ = Math.max(5, Math.min(26, targetCameraZ));
+      }, { passive: true });
+
+      // Touch events support for mobile devices
+      canvas.addEventListener('touchstart', (e) => {
+        if (handTrackingMode || e.touches.length === 0) return;
+        mouseDragging = true;
+        prevMouseX = e.touches[0].clientX;
+        prevMouseY = e.touches[0].clientY;
+      }, { passive: true });
+
+      canvas.addEventListener('touchend', () => {
+        mouseDragging = false;
+      });
+
+      canvas.addEventListener('touchmove', (e) => {
+        if (handTrackingMode || !mouseDragging || e.touches.length === 0) return;
+        const deltaX = e.touches[0].clientX - prevMouseX;
+        const deltaY = e.touches[0].clientY - prevMouseY;
+        
+        targetDeltaX = deltaX * 0.012;
+        targetDeltaY = deltaY * 0.012;
+        
+        prevMouseX = e.touches[0].clientX;
+        prevMouseY = e.touches[0].clientY;
+      }, { passive: true });
+    }
+
+    // -------------------------------------------------------------
+    // MediaPipe Hand Detection & Gesture Mapping
+    // -------------------------------------------------------------
+    function initMediaPipe() {
+      updateLoaderText("Initializing Hand Recognition API...");
+      
+      // Initialize hidden canvas to offload video elements and avoid GPU thread lockups
+      hiddenCanvas = document.createElement('canvas');
+      hiddenCanvas.width = 320;
+      hiddenCanvas.height = 240;
+      hiddenCtx = hiddenCanvas.getContext('2d');
+      
+      // Hands configuration
+      handsTracker = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      handsTracker.setOptions({
+        maxNumHands: gestureMode,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      handsTracker.onResults(onHandResults);
+
+      // Startup native webcam stream
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 320 },
+          height: { ideal: 240 },
+          facingMode: "user"
+        },
+        audio: false
+      })
+      .then((stream) => {
+        videoStream = stream;
+        webcamVideo.srcObject = stream;
+        
+        webcamVideo.onloadedmetadata = () => {
+          webcamVideo.play().then(() => {
+            cameraActive = true;
+            webcamIndicator.innerText = "Searching";
+            webcamBox.className = "webcam-container searching";
+            statusWebcamVal.innerHTML = `<span class="status-dot dot-green"></span>Active`;
+            showToast("Camera Authorized! Wave your hand in front of the lens.", "cyan");
+            
+            // Start native frame processing loop
+            processWebcamFrame();
+          });
+        };
+      })
+      .catch((err) => {
+        console.warn("Webcam activation failed:", err);
+        webcamIndicator.innerText = "Error";
+        webcamBox.className = "webcam-container error";
+        
+        statusWebcamVal.innerHTML = `<span class="status-dot dot-red"></span>No Access`;
+        showToast("Webcam blocked or not found. Falling back to mouse controls.", "red");
+      });
+    }
+
+    async function processWebcamFrame() {
+      if (!cameraActive) return;
+
+      const now = performance.now();
+      if ((webcamVideo.readyState === webcamVideo.HAVE_ENOUGH_DATA || webcamVideo.readyState === webcamVideo.HAVE_CURRENT_DATA) &&
+          (now - lastMediaPipeSendTime >= MEDIAPIPE_INTERVAL_MS)) {
+        if (!isProcessing) {
+          isProcessing = true;
+          lastMediaPipeSendTime = now;
+          
+          // Safety timeout: if MediaPipe prediction hangs for > 600ms, unlock loop
+          const lockTimeout = setTimeout(() => {
+            if (isProcessing) {
+              console.warn("MediaPipe frame processing timed out. Releasing lock.");
+              isProcessing = false;
+            }
+          }, 600);
+
+          try {
+            // Draw video frame to CPU-bound 2D canvas to avoid GPU-WebGL resource deadlocks
+            hiddenCtx.drawImage(webcamVideo, 0, 0, hiddenCanvas.width, hiddenCanvas.height);
+            await handsTracker.send({ image: hiddenCanvas });
+          } catch (e) {
+            console.error("MediaPipe prediction error:", e);
+          } finally {
+            clearTimeout(lockTimeout);
+            isProcessing = false;
+          }
+        }
+      }
+
+      requestAnimationFrame(processWebcamFrame);
+    }
+
+    // --- Two-Hand Gesture Helper Functions ---
+    function dist2D(a, b) {
+      if (!a || !b) return 0;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function dist3D(a, b) {
+      if (!a || !b) return 0;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const dz = (a.z || 0) - (b.z || 0);
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    function isPinching(landmarks) {
+      if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) return false;
+      const thumb = landmarks[4];
+      const index = landmarks[8];
+      return dist3D(thumb, index) < 0.075;
+    }
+
+    function isOpenPalm(landmarks) {
+      if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) return false;
+      const tips = [4, 8, 12, 16, 20];
+      const mcps = [2, 5, 9, 13, 17];
+      const wrist = landmarks[0];
+      if (!wrist) return false;
+      let openCount = 0;
+      for (let i = 0; i < 5; i++) {
+        if (!landmarks[tips[i]] || !landmarks[mcps[i]]) continue;
+        if (dist2D(landmarks[tips[i]], wrist) > dist2D(landmarks[mcps[i]], wrist)) openCount++;
+      }
+      return openCount >= 4;
+    }
+
+    function isFist(landmarks) {
+      if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) return false;
+      return !isOpenPalm(landmarks);
+    }
+
+    function generateExplosionPositions() {
+      const arr = new Float32Array(MAX_PARTICLE_COUNT * 3);
+      for (let i = 0; i < MAX_PARTICLE_COUNT; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 4 + Math.random() * 10;
+        arr[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+        arr[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        arr[i * 3 + 2] = r * Math.cos(phi);
+      }
+      return arr;
+    }
+
+    // --- Single-hand gesture processing (used for 1-hand mode or fallback) ---
+    function processSingleHandGestures(landmarks) {
+      if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) return;
+
+      // 1. Draw skeleton
+      drawSkeleton(landmarks, "#00f2fe");
+
+      // 2. Wrist position → orbit rotation (Clutch)
+      const wrist = landmarks[0];
+      if (!wrist) return;
+      if (!hasHandReference) {
+        lastHandX = wrist.x;
+        lastHandY = wrist.y;
+        hasHandReference = true;
+      } else {
+        const dx = wrist.x - lastHandX;
+        const dy = wrist.y - lastHandY;
+        targetDeltaX = -dx * 3.5;
+        targetDeltaY = dy * 2.5;
+        lastHandX = wrist.x;
+        lastHandY = wrist.y;
+      }
+
+      // 3. Palm Roll → Z-axis rotation (Clutch)
+      const middleMCP = landmarks[9];
+      if (middleMCP && wrist) {
+        const handRoll = Math.atan2(middleMCP.x - wrist.x, -(middleMCP.y - wrist.y));
+        if (!hasRollReference) {
+          lastHandRoll = handRoll;
+          hasRollReference = true;
+        } else {
+          let deltaRoll = handRoll - lastHandRoll;
+          if (deltaRoll > Math.PI) deltaRoll -= 2 * Math.PI;
+          if (deltaRoll < -Math.PI) deltaRoll += 2 * Math.PI;
+          targetDeltaZ = deltaRoll * 2.0;
+          lastHandRoll = handRoll;
+        }
+      }
+
+      // 4. Pinch → Zoom (Clutch)
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+      if (thumbTip && indexTip) {
+        const pdx = thumbTip.x - indexTip.x;
+        const pdy = thumbTip.y - indexTip.y;
+        const pdz = thumbTip.z - indexTip.z;
+        const pinchDistance = Math.sqrt(pdx*pdx + pdy*pdy + pdz*pdz);
+        if (!hasPinchReference) {
+          lastPinchDistance = pinchDistance;
+          hasPinchReference = true;
+        } else {
+          const deltaPinch = pinchDistance - lastPinchDistance;
+          const zoomSensitivity = 85.0;
+          targetCameraZ -= deltaPinch * zoomSensitivity;
+          targetCameraZ = Math.max(5.0, Math.min(26.0, targetCameraZ));
+          lastPinchDistance = pinchDistance;
+        }
+      }
+    }
+
+    // --- Two-hand gesture processing ---
+    function processTwoHandGestures(results) {
+      if (!results || !results.multiHandLandmarks || results.multiHandLandmarks.length < 2) return;
+
+      // Guaranteed non-null initial assignments
+      let domLandmarks = results.multiHandLandmarks[0];
+      let supLandmarks = results.multiHandLandmarks[1];
+
+      // Try to assign based on handedness if available and distinguishable
+      const handedness = results.multiHandedness || results.multiHandHandedness;
+      if (handedness && handedness.length >= 2) {
+        const mp0 = handedness[0]?.label;
+        const mp1 = handedness[1]?.label;
+        if (mp0 && mp1) {
+          const user0 = mp0 === 'Right' ? 'Left' : 'Right';
+          const user1 = mp1 === 'Right' ? 'Left' : 'Right';
+          if (user0 !== user1) {
+            if (user0 === dominantHand) {
+              domLandmarks = results.multiHandLandmarks[0];
+              supLandmarks = results.multiHandLandmarks[1];
+            } else {
+              domLandmarks = results.multiHandLandmarks[1];
+              supLandmarks = results.multiHandLandmarks[0];
+            }
+          }
+        }
+      }
+
+      // Safety check: both must be valid arrays of 21 landmarks
+      if (!domLandmarks || !supLandmarks || domLandmarks.length < 21 || supLandmarks.length < 21) return;
+
+      // Draw both skeletons with distinct colors (Dominant = cyan, Support = gold)
+      drawSkeleton(domLandmarks, "#00f2fe");
+      drawSkeleton(supLandmarks, "#f59e0b");
+
+      const domWrist = domLandmarks[0];
+      const supWrist = supLandmarks[0];
+      if (!domWrist || !supWrist) return;
+
+      const twoHandDist = dist2D(domWrist, supWrist);
+      const now = Date.now();
+
+      // ==============================================================
+      // 1. G12: TWO-HAND PINCH (INSPECTION FREEZE / ROTATION LOCK)
+      // ==============================================================
+      const domPinch = isPinching(domLandmarks);
+      const supPinch = isPinching(supLandmarks);
+
+      if (domPinch && supPinch) {
+        if (!isPinchFrozen) {
+          isPinchFrozen = true;
+          showToast("❄️ Inspection Lock: View & Rotation Frozen", "cyan");
+        }
+        
+        // Zero out rotation deltas so rotation stops immediately
+        targetDeltaX = 0; targetDeltaY = 0; targetDeltaZ = 0;
+        currentDeltaX = 0; currentDeltaY = 0; currentDeltaZ = 0;
+
+        // Draw glowing ice-blue halos on pinching fingertips
+        [domLandmarks[4], domLandmarks[8], supLandmarks[4], supLandmarks[8]].forEach(pt => {
+          if (!pt) return;
+          webcamCtx.beginPath();
+          webcamCtx.arc(pt.x * webcamCanvas.width, pt.y * webcamCanvas.height, 8, 0, 2 * Math.PI);
+          webcamCtx.strokeStyle = "#38bdf8";
+          webcamCtx.lineWidth = 3;
+          webcamCtx.stroke();
+        });
+
+        // Reset tracking references to prevent sudden jumps upon release
+        hasTwoHandReference = false;
+        hasTwoHandAngleRef = false;
+        hasHandReference = false;
+        hasPinchReference = false;
+        hasMidReference = false;
+        return; // Full freeze: bypass all continuous manipulations while locked
+      } else if (isPinchFrozen) {
+        isPinchFrozen = false;
+        showToast("Inspection Lock Released: Controls Active", "cyan");
+      }
+
+      // ==============================================================
+      // 2. G11: TWO-HAND CLAP (VIEW & ORIENTATION RESET)
+      // ==============================================================
+      // Maintain rolling approach history over the last 300ms
+      wristApproachHistory.push({ time: now, dist: twoHandDist });
+      wristApproachHistory = wristApproachHistory.filter(h => now - h.time <= 300);
+
+      const pastWider = wristApproachHistory.some(h => h.dist > 0.22);
+      const isRapidApproach = twoHandDist < 0.11 && pastWider;
+      const isDirectContact = twoHandDist < 0.075;
+
+      if ((isRapidApproach || isDirectContact) && (now - lastClapTime > 1000)) {
+        lastClapTime = now;
+        wristApproachHistory = [];
+
+        // Draw green clap ripple on webcam canvas
+        const clapCenterX = (domWrist.x + supWrist.x) * 0.5 * webcamCanvas.width;
+        const clapCenterY = (domWrist.y + supWrist.y) * 0.5 * webcamCanvas.height;
+        webcamCtx.beginPath();
+        webcamCtx.arc(clapCenterX, clapCenterY, 30, 0, 2 * Math.PI);
+        webcamCtx.strokeStyle = "#4ade80";
+        webcamCtx.lineWidth = 4;
+        webcamCtx.stroke();
+
+        // Factory reset orientation, scale, zoom, and pan
+        particleSystem.quaternion.identity();
+        targetDeltaX = 0; targetDeltaY = 0; targetDeltaZ = 0;
+        currentDeltaX = 0; currentDeltaY = 0; currentDeltaZ = 0;
+        targetScale = 1.0; currentScale = 1.0;
+        targetCameraZ = 12.0;
+        targetPanX = 0; targetPanY = 0;
+        currentPanX = 0; currentPanY = 0;
+
+        if (isExploded) {
+          isExploded = false;
+          explosionPositions = null;
+          isMorphing = true;
+          morphStartTime = performance.now();
+        }
+
+        hasTwoHandReference = false;
+        hasTwoHandAngleRef = false;
+        hasHandReference = false;
+        hasPinchReference = false;
+        hasMidReference = false;
+        isAnchorOrbitActive = false;
+        isShapeCycleArmed = false;
+
+        showToast("👏 Clap Detected! View, Scale & Orientation Reset to Default.", "green");
+        return;
+      }
+
+      // ==============================================================
+      // 3. G10: EXPLOSION / REFORMATION DETECTION
+      // ==============================================================
+      const bothFist = isFist(domLandmarks) && isFist(supLandmarks);
+      const bothOpen = isOpenPalm(domLandmarks) && isOpenPalm(supLandmarks);
+
+      if (bothFist) {
+        if (!explosionArmed) {
+          explosionArmed = true;
+          lastBothFistTime = now;
+        }
+      } else if (bothOpen && explosionArmed && (now - lastBothFistTime > 200)) {
+        // Transition: fist → open palm detected
+        explosionArmed = false;
+        if (!isExploded) {
+          // EXPLODE: scatter particles outward
+          isExploded = true;
+          explosionPositions = generateExplosionPositions();
+          isMorphing = true;
+          morphStartTime = performance.now();
+          showToast("💥 Particle Explosion! Close both fists then open to reform.", "gold");
+        } else {
+          // REFORM: reassemble into current shape
+          isExploded = false;
+          explosionPositions = null;
+          isMorphing = true;
+          morphStartTime = performance.now();
+          showToast("✨ Particles reforming into shape.", "cyan");
+        }
+      } else if (!bothFist) {
+        explosionArmed = false;
+      }
+
+      // ==============================================================
+      // 4. CONTINUOUS TWO-HAND MANIPULATION (G4 SCALE, G5 STEER, G6 PAN)
+      // ==============================================================
+      const midX = (domWrist.x + supWrist.x) * 0.5;
+      const midY = (domWrist.y + supWrist.y) * 0.5;
+
+      if (!hasTwoHandReference) {
+        lastTwoHandDistance = twoHandDist;
+        hasTwoHandReference = true;
+      }
+      if (!hasMidReference) {
+        lastMidX = midX;
+        lastMidY = midY;
+        hasMidReference = true;
+      }
+
+      const deltaDist = twoHandDist - lastTwoHandDistance;
+      const dMidX = midX - lastMidX;
+      const dMidY = midY - lastMidY;
+      const midMoveDist = Math.sqrt(dMidX * dMidX + dMidY * dMidY);
+
+      let isPanning = false;
+
+      // Differentiate Scale vs. Pan:
+      // If inter-wrist distance changes significantly, G4 Scale takes priority.
+      // If inter-wrist distance is relatively stable and hands translate together, G6 Pan applies.
+      if (Math.abs(deltaDist) > 0.018) {
+        // G4: Two-Hand Scale
+        targetScale += deltaDist * 3.0;
+        targetScale = Math.max(0.3, Math.min(3.0, targetScale));
+        lastMidX = midX;
+        lastMidY = midY;
+      } else if (midMoveDist > 0.008) {
+        // G6: Two-Hand Parallel Translate (Pan)
+        isPanning = true;
+        targetPanX += -dMidX * 30.0;
+        targetPanY += -dMidY * 24.0;
+        targetPanX = Math.max(-12.0, Math.min(12.0, targetPanX));
+        targetPanY = Math.max(-9.0, Math.min(9.0, targetPanY));
+      }
+
+      lastTwoHandDistance = twoHandDist;
+      lastMidX = midX;
+      lastMidY = midY;
+
+      // G5: Two-Hand Steering Wheel (angle between wrists)
+      const steerAngle = Math.atan2(
+        supWrist.y - domWrist.y,
+        supWrist.x - domWrist.x
+      );
+
+      if (!hasTwoHandAngleRef) {
+        lastTwoHandAngle = steerAngle;
+        hasTwoHandAngleRef = true;
+      } else {
+        let deltaAngle = steerAngle - lastTwoHandAngle;
+        if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+        if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+        if (Math.abs(deltaAngle) > 0.015) {
+          targetDeltaZ = deltaAngle * 2.5; // Override single-hand Z roll
+        }
+        lastTwoHandAngle = steerAngle;
+      }
+
+      // ==============================================================
+      // 5. G9: SHAPE CYCLING (Left Fist + Right Open Palm)
+      // ==============================================================
+      const leftIsFist = (dominantHand === 'Right') ? isFist(supLandmarks) : isFist(domLandmarks);
+      const rightIsOpen = (dominantHand === 'Right') ? isOpenPalm(domLandmarks) : isOpenPalm(supLandmarks);
+
+      if (leftIsFist && rightIsOpen) {
+        if (!isShapeCycleArmed) {
+          isShapeCycleArmed = true;
+          shapeCycleFistHoldStart = now;
+        } else if ((now - shapeCycleFistHoldStart > 300) && (now - lastShapeCycleTime > 1500)) {
+          // Held pose long enough + debounce passed → cycle to next preset
+          lastShapeCycleTime = now;
+          const nextIndex = (currentPresetIndex + 1) % presets.length;
+          switchPreset(nextIndex);
+          showToast(`🔄 Shape Cycle → ${presets[nextIndex].name}`, "gold");
+
+          // Reset references to prevent jumps after shape switch
+          hasTwoHandReference = false;
+          hasTwoHandAngleRef = false;
+          hasHandReference = false;
+          hasPinchReference = false;
+          hasMidReference = false;
+          isShapeCycleArmed = false; // Re-arm requires releasing pose
+          return; // One-shot: skip remaining gestures this frame
+        }
+      } else {
+        isShapeCycleArmed = false;
+      }
+
+      // ==============================================================
+      // 6. G8: SIMULTANEOUS ZOOM + ROTATE (Left Pinch + Right Orbit)
+      // ==============================================================
+      // Left hand pinch controls zoom; right hand wrist delta controls rotation
+      // This decouples zoom and rotation for true 6DoF control
+      const leftPinch = (dominantHand === 'Right') ? supPinch : domPinch;
+      const rightPinch = (dominantHand === 'Right') ? domPinch : supPinch;
+      const leftLandmarks = (dominantHand === 'Right') ? supLandmarks : domLandmarks;
+      const rightLandmarks = (dominantHand === 'Right') ? domLandmarks : supLandmarks;
+      const rightWrist = (dominantHand === 'Right') ? domWrist : supWrist;
+
+      if (leftPinch && !rightPinch) {
+        // --- Left hand: Zoom via pinch distance delta ---
+        const lThumb = leftLandmarks[4];
+        const lIndex = leftLandmarks[8];
+        if (lThumb && lIndex) {
+          const lpdx = lThumb.x - lIndex.x;
+          const lpdy = lThumb.y - lIndex.y;
+          const lpdz = lThumb.z - lIndex.z;
+          const lPinchDist = Math.sqrt(lpdx*lpdx + lpdy*lpdy + lpdz*lpdz);
+          if (!hasPinchReference) {
+            lastPinchDistance = lPinchDist;
+            hasPinchReference = true;
+          } else {
+            const deltaPinch = lPinchDist - lastPinchDistance;
+            const zoomSensitivity = 85.0;
+            targetCameraZ -= deltaPinch * zoomSensitivity;
+            targetCameraZ = Math.max(5.0, Math.min(26.0, targetCameraZ));
+            lastPinchDistance = lPinchDist;
+          }
+        }
+
+        // --- Right hand: Orbit rotation via wrist delta ---
+        if (!hasHandReference) {
+          lastHandX = rightWrist.x;
+          lastHandY = rightWrist.y;
+          hasHandReference = true;
+        } else {
+          const dx = rightWrist.x - lastHandX;
+          const dy = rightWrist.y - lastHandY;
+          targetDeltaX = -dx * 3.5;
+          targetDeltaY = dy * 2.5;
+          lastHandX = rightWrist.x;
+          lastHandY = rightWrist.y;
+        }
+
+        // Draw visual indicator: purple halos on left pinch fingers
+        [leftLandmarks[4], leftLandmarks[8]].forEach(pt => {
+          if (!pt) return;
+          webcamCtx.beginPath();
+          webcamCtx.arc(pt.x * webcamCanvas.width, pt.y * webcamCanvas.height, 7, 0, 2 * Math.PI);
+          webcamCtx.strokeStyle = "#a855f7";
+          webcamCtx.lineWidth = 3;
+          webcamCtx.stroke();
+        });
+
+        isAnchorOrbitActive = false; // G8 takes precedence over G7
+        return; // G8 active: skip fallback orbit/zoom
+      }
+
+      // ==============================================================
+      // 7. G7: ANCHOR PRECISION ORBIT (Left Stationary + Right Orbit)
+      // ==============================================================
+      // Detect if left hand is stationary (acting as anchor reference)
+      const leftWrist = (dominantHand === 'Right') ? supWrist : domWrist;
+
+      if (!isAnchorOrbitActive) {
+        // Check if left hand has been stationary long enough to anchor
+        const leftMovement = Math.sqrt(
+          Math.pow(leftWrist.x - anchorRefX, 2) + Math.pow(leftWrist.y - anchorRefY, 2)
+        );
+        if (leftMovement < anchorThreshold) {
+          isAnchorOrbitActive = true;
+        }
+        anchorRefX = leftWrist.x;
+        anchorRefY = leftWrist.y;
+      } else {
+        // Verify anchor is still stationary — if it moved, deactivate
+        const leftDrift = Math.sqrt(
+          Math.pow(leftWrist.x - anchorRefX, 2) + Math.pow(leftWrist.y - anchorRefY, 2)
+        );
+        if (leftDrift > anchorThreshold * 2.5) {
+          // Left hand moved significantly, break anchor
+          isAnchorOrbitActive = false;
+          anchorRefX = leftWrist.x;
+          anchorRefY = leftWrist.y;
+        }
+      }
+
+      if (isAnchorOrbitActive) {
+        // Precision orbit: right hand controls rotation with enhanced sensitivity
+        if (!hasHandReference) {
+          lastHandX = rightWrist.x;
+          lastHandY = rightWrist.y;
+          hasHandReference = true;
+        } else {
+          const dx = rightWrist.x - lastHandX;
+          const dy = rightWrist.y - lastHandY;
+          if (!isPanning) {
+            targetDeltaX = -dx * 5.25; // 1.5× amplification for precision
+            targetDeltaY = dy * 3.75;  // 1.5× amplification for precision
+          }
+          lastHandX = rightWrist.x;
+          lastHandY = rightWrist.y;
+        }
+
+        // Draw anchor indicator: green halo on left wrist
+        webcamCtx.beginPath();
+        webcamCtx.arc(leftWrist.x * webcamCanvas.width, leftWrist.y * webcamCanvas.height, 10, 0, 2 * Math.PI);
+        webcamCtx.strokeStyle = "#22c55e";
+        webcamCtx.lineWidth = 3;
+        webcamCtx.stroke();
+
+        // Support hand zoom still works during anchor orbit
+        const sThumb = leftLandmarks[4];
+        const sIndex = leftLandmarks[8];
+        if (sThumb && sIndex && leftPinch) {
+          const spdx = sThumb.x - sIndex.x;
+          const spdy = sThumb.y - sIndex.y;
+          const spdz = sThumb.z - sIndex.z;
+          const sPinch = Math.sqrt(spdx*spdx + spdy*spdy + spdz*spdz);
+          if (!hasPinchReference) {
+            lastPinchDistance = sPinch;
+            hasPinchReference = true;
+          } else {
+            const deltaPinch = sPinch - lastPinchDistance;
+            const zoomSensitivity = 85.0;
+            targetCameraZ -= deltaPinch * zoomSensitivity;
+            targetCameraZ = Math.max(5.0, Math.min(26.0, targetCameraZ));
+            lastPinchDistance = sPinch;
+          }
+        } else if (!leftPinch) {
+          hasPinchReference = false;
+        }
+        return; // G7 active: skip default fallback
+      }
+
+      // ==============================================================
+      // 8. DEFAULT FALLBACK: Dominant orbit + Support zoom
+      // ==============================================================
+      // Dominant hand controls orbit rotation (G1, G2) — suppressed while actively panning
+      if (!hasHandReference) {
+        lastHandX = domWrist.x;
+        lastHandY = domWrist.y;
+        hasHandReference = true;
+      } else {
+        const dx = domWrist.x - lastHandX;
+        const dy = domWrist.y - lastHandY;
+        if (!isPanning) {
+          targetDeltaX = -dx * 3.5;
+          targetDeltaY = dy * 2.5;
+        }
+        lastHandX = domWrist.x;
+        lastHandY = domWrist.y;
+      }
+
+      // Support hand controls zoom via pinch (G3) when only support hand is pinching
+      const sThumb = supLandmarks[4];
+      const sIndex = supLandmarks[8];
+      if (sThumb && sIndex && supPinch && !domPinch) {
+        const spdx = sThumb.x - sIndex.x;
+        const spdy = sThumb.y - sIndex.y;
+        const spdz = sThumb.z - sIndex.z;
+        const sPinch = Math.sqrt(spdx*spdx + spdy*spdy + spdz*spdz);
+        if (!hasPinchReference) {
+          lastPinchDistance = sPinch;
+          hasPinchReference = true;
+        } else {
+          const deltaPinch = sPinch - lastPinchDistance;
+          const zoomSensitivity = 85.0;
+          targetCameraZ -= deltaPinch * zoomSensitivity;
+          targetCameraZ = Math.max(5.0, Math.min(26.0, targetCameraZ));
+          lastPinchDistance = sPinch;
+        }
+      } else {
+        hasPinchReference = false;
+      }
+    }
+
+    function onHandResults(results) {
+      try {
+        // Clear skeleton drawing canvas
+        webcamCtx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+
+        const handCount = (results.multiHandLandmarks && results.multiHandLandmarks.length) || 0;
+
+        if (handCount > 0) {
+          // At least one hand detected
+          lastHandDetectedTime = Date.now();
+
+          if (!handTrackingMode) {
+            handTrackingMode = true;
+            webcamBox.className = "webcam-container tracking";
+            webcamIndicator.innerText = "Tracking";
+            statusControllerVal.innerHTML = `<span class="status-dot dot-green"></span>Hand Gestures`;
+            showToast("Hand gesture controls active.", "green");
+          }
+
+          // Branch: two-hand mode with 2 hands visible → full two-hand gesture set
+          if (gestureMode === 2 && handCount >= 2) {
+            processTwoHandGestures(results);
+          } else {
+            // 1-hand mode, OR 2-hand mode with only 1 hand visible → single-hand fallback
+            processSingleHandGestures(results.multiHandLandmarks[0]);
+          }
+        } else {
+          // No hand is visible in this frame
+          handleNoHandFound();
+        }
+      } catch (err) {
+        console.error("Error in onHandResults:", err);
+        webcamCtx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+      }
+    }
+
+    function handleNoHandFound() {
+      // Clear skeleton
+      webcamCtx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+      
+      // Reset all tracking references when hands are lost
+      hasHandReference = false;
+      hasPinchReference = false;
+      hasRollReference = false;
+      hasTwoHandReference = false;
+      hasTwoHandAngleRef = false;
+      hasMidReference = false;
+      isPinchFrozen = false;
+      explosionArmed = false;
+      isAnchorOrbitActive = false;
+      isShapeCycleArmed = false;
+
+      // If in tracking mode, check if we need to release back to Mouse controls
+      // We give it a 1000ms delay timeout buffer to prevent immediate drops during temporary glitches
+      if (handTrackingMode && (Date.now() - lastHandDetectedTime > 1000)) {
+        handTrackingMode = false;
+        webcamBox.className = "webcam-container searching";
+        webcamIndicator.innerText = "Searching";
+        
+        statusControllerVal.innerHTML = `<span class="status-dot dot-cyan"></span>Auto / Mouse`;
+        showToast("Hand lost. Mouse and Auto-Orbit controls activated.", "cyan");
+      }
+    }
+
+    // Canvas 2D skeleton line drawing script — color param for multi-hand distinction
+    function drawSkeleton(landmarks, color = "#00f2fe") {
+      if (!landmarks || !Array.isArray(landmarks) || landmarks.length < 21) return;
+      webcamCtx.strokeStyle = color;
+      webcamCtx.lineWidth = 2.5;
+      webcamCtx.fillStyle = "#ffffff";
+      
+      const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8], // Index
+        [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+        [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+        [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
+        [0, 17] // Palm base
+      ];
+
+      // Draw bone linkages
+      connections.forEach(([s, e]) => {
+        const pStart = landmarks[s];
+        const pEnd = landmarks[e];
+        if (!pStart || !pEnd) return;
+        
+        webcamCtx.beginPath();
+        webcamCtx.moveTo(pStart.x * webcamCanvas.width, pStart.y * webcamCanvas.height);
+        webcamCtx.lineTo(pEnd.x * webcamCanvas.width, pEnd.y * webcamCanvas.height);
+        webcamCtx.stroke();
+      });
+
+      // Draw individual finger joint nodes
+      landmarks.forEach((lm) => {
+        if (!lm) return;
+        webcamCtx.beginPath();
+        webcamCtx.arc(lm.x * webcamCanvas.width, lm.y * webcamCanvas.height, 3.5, 0, 2 * Math.PI);
+        webcamCtx.fill();
+      });
+    }
+
+    // -------------------------------------------------------------
+    // App Logic, Transitions, & Render Loop
+    // -------------------------------------------------------------
+    function switchPreset(index) {
+      // Allow switching preset even if same index if currently exploded
+      if (index === currentPresetIndex && !isExploded) return;
+      currentPresetIndex = index;
+      
+      // CRITICAL FIX: Reset explosion state so selecting a preset immediately morphs to the selected shape
+      isExploded = false;
+      explosionPositions = null;
+      explosionArmed = false;
+      isMorphing = true;
+      morphStartTime = performance.now();
+
+      // Update Active UI States
+      const buttons = document.querySelectorAll('.preset-btn');
+      buttons.forEach((btn, idx) => {
+        if (idx === index) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      
+      showToast(`Transitioning to Preset: ${presets[index].name}...`, "cyan");
+    }
+
+    // Fast HSL to RGB conversion writing directly to reusable globals
+    let r = 0, g = 0, b = 0;
+    function hslToRgbFast(h, s, l) {
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        
+        // Red
+        let t = h + 1/3;
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) r = p + (q - p) * 6 * t;
+        else if (t < 1/2) r = q;
+        else if (t < 2/3) r = p + (q - p) * (2/3 - t) * 6;
+        else r = p;
+
+        // Green
+        t = h;
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) g = p + (q - p) * 6 * t;
+        else if (t < 1/2) g = q;
+        else if (t < 2/3) g = p + (q - p) * (2/3 - t) * 6;
+        else g = p;
+
+        // Blue
+        t = h - 1/3;
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) b = p + (q - p) * 6 * t;
+        else if (t < 1/2) b = q;
+        else if (t < 2/3) b = p + (q - p) * (2/3 - t) * 6;
+        else b = p;
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      animationTime += 0.005;
+
+      // Watchdog: If no hand callback has been received for > 500ms, clear the canvas
+      // This guarantees no static ghost skeleton can EVER remain frozen on the camera
+      if (Date.now() - lastHandDetectedTime > 500) {
+        webcamCtx.clearRect(0, 0, webcamCanvas.width, webcamCanvas.height);
+      }
+
+      // 1. Transition interpolation (Smooth CPU lerping of positions and dynamic color spectrum shifts)
+      const posAttr = particleGeometry.attributes.position;
+      const colAttr = particleGeometry.attributes.color;
+      
+      const targetPosArr = isExploded ? explosionPositions : presetPositions[currentPresetIndex];
+      const tHues = presetHues[currentPresetIndex];
+      const tSats = presetSats[currentPresetIndex];
+      const tLits = presetLits[currentPresetIndex];
+
+      const currentPosArr = posAttr.array;
+      const currentColArr = colAttr.array;
+
+      const lerpSpeed = 0.075;
+      
+      // Calculate dynamic color rotation shift over time (shifts 45 degrees per unit time)
+      const colorOffset = (animationTime * 45) % 360;
+
+      // Loop only up to activeParticleCount (28,000 Ultra or 20,000 Lite)
+      const count = activeParticleCount;
+      let maxDistSq = 0;
+
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        
+        // Transition position
+        const dx = targetPosArr[i3] - currentPosArr[i3];
+        const dy = targetPosArr[i3 + 1] - currentPosArr[i3 + 1];
+        const dz = targetPosArr[i3 + 2] - currentPosArr[i3 + 2];
+        
+        currentPosArr[i3]     += dx * lerpSpeed;
+        currentPosArr[i3 + 1] += dy * lerpSpeed;
+        currentPosArr[i3 + 2] += dz * lerpSpeed;
+
+        if (isMorphing) {
+          const dSq = dx * dx + dy * dy + dz * dz;
+          if (dSq > maxDistSq) maxDistSq = dSq;
+        }
+        
+        // Calculate shifted HSL values
+        const h = (tHues[i] + colorOffset) % 360;
+        const s = tSats[i];
+        const l = tLits[i];
+        
+        // Convert to RGB (populates globals r, g, b)
+        hslToRgbFast(h / 360, s, l);
+
+        // Transition color towards dynamic shifted HSL value
+        currentColArr[i3]     += (r - currentColArr[i3])     * lerpSpeed;
+        currentColArr[i3 + 1] += (g - currentColArr[i3 + 1]) * lerpSpeed;
+        currentColArr[i3 + 2] += (b - currentColArr[i3 + 2]) * lerpSpeed;
+      }
+
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+
+      // Settle morph when particles are close to targets to optimize CPU
+      if (isMorphing && (maxDistSq < 0.0001 || performance.now() - morphStartTime > 3000)) {
+        isMorphing = false;
+      }
+
+      // 2. Map rotation deltas in world/screen space using Quaternions
+      if (isPinchFrozen) {
+        // G12: Inspection Freeze pauses rotation and suppresses auto-orbit
+        targetDeltaX = 0;
+        targetDeltaY = 0;
+        targetDeltaZ = 0;
+        currentDeltaX = 0;
+        currentDeltaY = 0;
+        currentDeltaZ = 0;
+      } else if (!handTrackingMode && !mouseDragging) {
+        // Auto-orbit mode
+        targetDeltaX = 0.0025;
+        targetDeltaY = 0;
+        targetDeltaZ *= 0.75;
+      } else {
+        // Friction decay to stop rotation when input stops
+        targetDeltaX *= 0.75;
+        targetDeltaY *= 0.75;
+        targetDeltaZ *= 0.75;
+      }
+
+      currentDeltaX += (targetDeltaX - currentDeltaX) * 0.12;
+      currentDeltaY += (targetDeltaY - currentDeltaY) * 0.12;
+      currentDeltaZ += (targetDeltaZ - currentDeltaZ) * 0.12;
+
+      // Construct incremental quaternions around screen axes (world X, Y, and Z)
+      const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), currentDeltaX);
+      const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), currentDeltaY);
+      const qZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), currentDeltaZ);
+      
+      // Premultiplying applies rotation around screen coordinates, preventing inversion anomalies
+      particleSystem.quaternion.premultiply(qY).premultiply(qX).premultiply(qZ);
+
+      // 3. Pan interpolation for G6 Two-Hand Pan
+      currentPanX += (targetPanX - currentPanX) * 0.1;
+      currentPanY += (targetPanY - currentPanY) * 0.1;
+
+      // 4. Scale interpolation for two-hand scale gesture
+      currentScale += (targetScale - currentScale) * 0.08;
+      particleSystem.scale.set(currentScale, currentScale, currentScale);
+
+      camera.position.z += (targetCameraZ - camera.position.z) * 0.06;
+
+      // 5. Subtle orbital wobble dynamic displacement to make static shapes feel organic (held still if pinch frozen)
+      const speedScale = 0.45;
+      particleSystem.position.y = currentPanY + (isPinchFrozen ? 0 : Math.sin(animationTime * 1.5) * speedScale);
+      particleSystem.position.x = currentPanX + (isPinchFrozen ? 0 : Math.cos(animationTime * 0.8) * speedScale * 0.5);
+
+      // 5. Update real-time audio visualizer waveform bars
+      updateAudioWaveform();
+
+      renderer.render(scene, camera);
+    }
+
+    // -------------------------------------------------------------
+    // Active Theory-style Cyber Music Player Logic
+    // -------------------------------------------------------------
+    function setupAudioContext() {
+      if (audioCtx) return;
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextClass();
+        audioAnalyser = audioCtx.createAnalyser();
+        audioAnalyser.fftSize = 64;
+        audioAnalyser.smoothingTimeConstant = 0.8;
+        audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+        
+        bgAudio = document.getElementById('bg-audio');
+        audioSource = audioCtx.createMediaElementSource(bgAudio);
+        audioSource.connect(audioAnalyser);
+        audioAnalyser.connect(audioCtx.destination);
+      } catch (e) {
+        console.warn("Web Audio API initialization deferred:", e);
+      }
+    }
+
+    async function toggleAudioPlay() {
+      if (!bgAudio) bgAudio = document.getElementById('bg-audio');
+      setupAudioContext();
+
+      if (audioCtx && audioCtx.state === 'suspended') {
+        try {
+          await audioCtx.resume();
+        } catch (e) {
+          console.warn("AudioContext resume error:", e);
+        }
+      }
+
+      if (bgAudio.paused) {
+        try {
+          await bgAudio.play();
+          isAudioPlaying = true;
+          updateAudioUI(true);
+          showToast("🎵 Playing: Cornfield Chase - Hans Zimmer", "cyan");
+        } catch (err) {
+          console.warn("Audio playback prevented by browser:", err);
+          showToast("Click the audio box to permit browser sound playback.", "yellow");
+        }
+      } else {
+        bgAudio.pause();
+        isAudioPlaying = false;
+        updateAudioUI(false);
+        showToast("Audio paused.", "cyan");
+      }
+    }
+
+    function updateAudioUI(isPlaying) {
+      const playerCard = document.getElementById('cyber-audio-player');
+      const statusLabel = document.getElementById('audio-status-label');
+      
+      if (playerCard) {
+        if (isPlaying) {
+          playerCard.classList.add('playing');
+        } else {
+          playerCard.classList.remove('playing');
+        }
+      }
+
+      if (statusLabel) {
+        statusLabel.innerText = isPlaying ? "PLAYING • HANS ZIMMER" : "PAUSED • CLICK TO PLAY";
+      }
+    }
+
+    function updateAudioWaveform() {
+      const bars = document.querySelectorAll('.cyber-wave-bar');
+      if (!bars || bars.length === 0) return;
+
+      if (isAudioPlaying && audioAnalyser && audioDataArray) {
+        audioAnalyser.getByteFrequencyData(audioDataArray);
+        // Distribute frequency bins across bars
+        const step = Math.max(1, Math.floor(audioDataArray.length / bars.length));
+        bars.forEach((bar, idx) => {
+          const val = audioDataArray[idx * step] || 0;
+          const height = Math.max(2, Math.min(12, Math.round((val / 255) * 12)));
+          bar.style.height = `${height}px`;
+        });
+      } else {
+        // Idle gentle wave animation
+        const t = animationTime * 4;
+        bars.forEach((bar, idx) => {
+          const h = 3 + Math.sin(t + idx * 0.8) * 1.5;
+          bar.style.height = `${Math.max(2, h)}px`;
+        });
+      }
+    }
+
+    function initAudioPlayer() {
+      bgAudio = document.getElementById('bg-audio');
+      const playToggle = document.getElementById('audio-play-toggle');
+      const prevBtn = document.getElementById('audio-prev-btn');
+      const nextBtn = document.getElementById('audio-next-btn');
+      const volumeBtn = document.getElementById('audio-volume-btn');
+      const volumeSlider = document.getElementById('audio-volume-slider');
+      const volumeWrapper = document.getElementById('audio-volume-wrapper');
+      const volumeVal = document.getElementById('audio-volume-val');
+      const timeLabel = document.getElementById('audio-time-label');
+
+      if (bgAudio) {
+        bgAudio.volume = audioVolume;
+      }
+
+      function syncVolumeUI(vol, muted) {
+        const effectiveVol = muted ? 0 : vol;
+        const pct = Math.round(effectiveVol * 100);
+        
+        if (volumeSlider) {
+          volumeSlider.value = effectiveVol;
+          volumeSlider.style.background = `linear-gradient(to right, #00f2fe ${pct}%, rgba(255, 255, 255, 0.15) ${pct}%)`;
+        }
+        if (volumeVal) {
+          volumeVal.innerText = `${pct}%`;
+        }
+        if (volumeBtn) {
+          if (muted || effectiveVol === 0) {
+            volumeBtn.innerText = "🔇";
+            volumeBtn.title = "Unmute (Sound muted)";
+          } else if (effectiveVol < 0.5) {
+            volumeBtn.innerText = "🔉";
+            volumeBtn.title = `Mute (${pct}% volume)`;
+          } else {
+            volumeBtn.innerText = "🔊";
+            volumeBtn.title = `Mute (${pct}% volume)`;
+          }
+        }
+      }
+
+      // Initialize UI state
+      syncVolumeUI(audioVolume, isAudioMuted);
+
+      if (volumeSlider) {
+        // Keep wrapper visible while mouse is actively dragging slider
+        volumeSlider.addEventListener('mousedown', () => {
+          if (volumeWrapper) volumeWrapper.classList.add('active');
+        });
+        window.addEventListener('mouseup', () => {
+          if (volumeWrapper) volumeWrapper.classList.remove('active');
+        });
+
+        volumeSlider.addEventListener('input', (e) => {
+          const val = parseFloat(e.target.value);
+          if (!bgAudio) return;
+          audioVolume = val;
+          if (val === 0) {
+            isAudioMuted = true;
+            bgAudio.muted = true;
+          } else {
+            isAudioMuted = false;
+            bgAudio.muted = false;
+            bgAudio.volume = val;
+            previousVolume = val;
+          }
+          syncVolumeUI(val, isAudioMuted);
+        });
+
+        volumeSlider.addEventListener('change', (e) => {
+          const val = parseFloat(e.target.value);
+          showToast(`Volume set to ${Math.round(val * 100)}%`, "cyan");
+        });
+      }
+
+      if (volumeBtn) {
+        volumeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!bgAudio) return;
+          isAudioMuted = !isAudioMuted;
+          bgAudio.muted = isAudioMuted;
+          if (isAudioMuted) {
+            syncVolumeUI(audioVolume, true);
+            showToast("Audio muted", "cyan");
+          } else {
+            if (audioVolume <= 0) {
+              audioVolume = previousVolume > 0 ? previousVolume : 0.8;
+            }
+            bgAudio.volume = audioVolume;
+            syncVolumeUI(audioVolume, false);
+            showToast(`Audio unmuted (${Math.round(audioVolume * 100)}%)`, "cyan");
+          }
+        });
+      }
+
+      if (playToggle) {
+        playToggle.addEventListener('click', toggleAudioPlay);
+      }
+
+      if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+          if (bgAudio) {
+            bgAudio.currentTime = 0;
+            if (bgAudio.paused) toggleAudioPlay();
+            showToast("⏮ Restarted track: Cornfield Chase", "cyan");
+          }
+        });
+      }
+
+      if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+          if (bgAudio) {
+            bgAudio.currentTime = 0;
+            if (bgAudio.paused) toggleAudioPlay();
+            showToast("🔁 Loop active: Cornfield Chase", "cyan");
+          }
+        });
+      }
+
+      if (bgAudio) {
+        bgAudio.addEventListener('timeupdate', () => {
+          if (timeLabel && !isNaN(bgAudio.currentTime)) {
+            const mins = Math.floor(bgAudio.currentTime / 60);
+            const secs = Math.floor(bgAudio.currentTime % 60);
+            timeLabel.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+          }
+        });
+
+        bgAudio.addEventListener('play', () => {
+          isAudioPlaying = true;
+          updateAudioUI(true);
+        });
+
+        bgAudio.addEventListener('pause', () => {
+          isAudioPlaying = false;
+          updateAudioUI(false);
+        });
+      }
+
+      // One-time window click to resume audio context seamlessly on user interaction
+      const unlockAudio = () => {
+        setupAudioContext();
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('keydown', unlockAudio);
+      };
+      window.addEventListener('click', unlockAudio);
+      window.addEventListener('keydown', unlockAudio);
+    }
+
+    // -------------------------------------------------------------
+    // UI Assembly & Utilities
+    // -------------------------------------------------------------
+    function buildUI() {
+      const container = document.getElementById('preset-buttons-container');
+      presets.forEach((p, idx) => {
+        const btn = document.createElement('button');
+        btn.className = `preset-btn ${idx === 0 ? 'active' : ''}`;
+        btn.onclick = () => switchPreset(idx);
+        
+        btn.innerHTML = `
+          <span class="preset-num">Shape ${String(idx + 1).padStart(2, '0')}</span>
+          <span style="font-weight: 600;">${p.name}</span>
+          <span style="font-size: 10px; color: #64748b; font-weight: 300;">${p.desc}</span>
+        `;
+        container.appendChild(btn);
+      });
+
+      // --- Particle Load Toggle (28K Ultra / 20K Lite) ---
+      const particleCountToggle = document.getElementById('particle-count-toggle');
+      if (particleCountToggle) {
+        particleCountToggle.querySelectorAll('.toggle-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const count = parseInt(btn.dataset.count);
+            if (count === activeParticleCount) return;
+            activeParticleCount = count;
+            
+            // Update UI active state
+            particleCountToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update WebGL geometry draw range dynamically
+            particleGeometry.setDrawRange(0, activeParticleCount);
+            isMorphing = true;
+            morphStartTime = performance.now();
+
+            const label = count === 36000 ? '36,000 (Max)' : (count === 28000 ? '28,000 (Ultra)' : '20,000 (Lite)');
+            showToast(`Particle load set to ${label}.`, "cyan");
+          });
+        });
+      }
+
+      // --- Gesture Mode Toggle (1-Hand / 2-Hand) ---
+      const gestureModeToggle = document.getElementById('gesture-mode-toggle');
+      gestureModeToggle.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const mode = parseInt(btn.dataset.mode);
+          if (mode === gestureMode) return;
+          gestureMode = mode;
+          
+          // Update UI active state
+          gestureModeToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          // Update MediaPipe tracking
+          handsTracker.setOptions({ maxNumHands: mode });
+          
+          // Show/hide two-hand directives
+          document.getElementById('two-hand-directives').style.display = mode === 2 ? 'block' : 'none';
+          
+          // Reset two-hand references
+          hasTwoHandReference = false;
+          hasTwoHandAngleRef = false;
+          hasMidReference = false;
+          isPinchFrozen = false;
+          explosionArmed = false;
+          
+          showToast(`Switched to ${mode}-Hand gesture mode.`, "cyan");
+        });
+      });
+
+      // --- Dominant Hand Toggle (Right / Left) ---
+      const handednessToggle = document.getElementById('handedness-toggle');
+      handednessToggle.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const hand = btn.dataset.hand;
+          if (hand === dominantHand) return;
+          dominantHand = hand;
+          
+          // Update UI active state
+          handednessToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          
+          showToast(`Dominant hand set to ${hand}. ${hand === 'Left' ? 'Left-handed' : 'Right-handed'} mode active.`, "cyan");
+        });
+      });
+
+      // Initialize Active Theory Cyber Audio Player
+      initAudioPlayer();
+    }
+
+    function updateLoaderText(text) {
+      loaderText.innerText = text;
+    }
+
+    function showToast(text, colorTheme) {
+      toastText.innerText = text;
+      toastDot.className = `status-dot dot-${colorTheme}`;
+    }
+
+    // Start-Up Sequencing
+    window.addEventListener('DOMContentLoaded', () => {
+      buildUI();
+      
+      setTimeout(() => {
+        initThree();
+        generatePresetCoordinates();
+        
+        setTimeout(() => {
+          // Fadeout Loader Splash screen
+          loaderOverlay.style.opacity = 0;
+          setTimeout(() => {
+            loaderOverlay.style.display = 'none';
+          }, 800);
+          
+          // Load camera APIs
+          initMediaPipe();
+          
+          // Fire animate loops
+          animate();
+        }, 600);
+      }, 300);
+    });
+  </script>
+</body>
+</html>

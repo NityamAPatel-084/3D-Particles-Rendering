@@ -1,0 +1,16 @@
+# Development documentation & walkthroughs
+*.md
+!README.md
+
+# Screenshots, recordings, and dev assets
+*.mp4
+Screenshot*.png
+verification_*.png
+2Hand_Priorities*.png
+image.png
+
+# PDF documentation
+*.pdf
+
+# Research files (not needed for production)
+two_hand_gesture_research*
